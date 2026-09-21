@@ -48,9 +48,10 @@ files needed immediately after the trigger is opened. When a client
 opens the trigger, CernVM-FS prefetches the listed dependencies
 concurrently using a pool of worker threads, replacing a long serial
 chain of requests with a short parallel prefetch phase. On a ROOT
-startup benchmark, filebundles match local-disk performance and keep
-startup time nearly flat as network latency grows, where the on-demand
-baseline degrades linearly. The feature is available in CernVM-FS 2.14.
+startup benchmark, filebundles bring performance into the local-disk
+range and keep startup time nearly flat as network latency grows, while
+the on-demand baseline degrades approximately linearly. Filebundles are
+an opt-in feature in CernVM-FS 2.14.
 }
 
 \maketitle
@@ -59,23 +60,18 @@ baseline degrades linearly. The feature is available in CernVM-FS 2.14.
 \section{Introduction}
 \label{sec-intro}
 
-CernVM-FS~\cite{ref-cvmfs} is a global, read-only file system for the
-distribution of scientific software. Rather than downloading and
-unpacking a full software stack in advance, clients access it directly
-from a globally available namespace under \texttt{/cvmfs}. Files are
-fetched only when they are actually opened; downloading, decompression
-and caching all happen transparently. For the user this resembles a
-streaming service for scientific software: usage can start immediately,
-and only the parts that are needed are ever transferred.
+CernVM-FS~\cite{ref-cvmfs} is a global, read-only file system for
+distributing scientific software. Rather than downloading and unpacking
+a complete software stack in advance, clients access a global namespace
+under \texttt{/cvmfs}. Files are fetched when they are opened;
+downloading, decompression, and caching are transparent to the user.
 
-CernVM-FS is a core component of the Worldwide LHC Computing Grid, but
-it is also widely used beyond high-energy physics, for example by
-Euclid, LIGO, LSST, SKA and EESSI. The infrastructure spans on the
-order of fifteen Stratum~1 mirror servers across Europe, the Americas
-and Asia. Through \texttt{/cvmfs}, clients can access on the order of
-$3.3\times10^{10}$ files and roughly 2~PB of data, with proven scaling
-to much larger installations, and more than 8000 container images are
-served, with the number of repositories continuing to grow.
+CernVM-FS is a core component of the Worldwide LHC Computing Grid and
+is also used by communities beyond high-energy physics, including
+Euclid, LIGO, LSST, SKA, and EESSI. The infrastructure has about
+fifteen Stratum~1 mirror servers in Europe, the Americas, and Asia.
+The \texttt{/cvmfs} namespace contains about $3.3\times10^{10}$ files
+and 2~PB of data; it also serves more than 8000 container images.
 
 This lazy, content-addressed model is extremely effective for
 distributed batch computing, where the benefits of a shared software
@@ -89,12 +85,11 @@ prefetching the files an application needs immediately after launch.
 \section{Motivation}
 \label{sec-motivation}
 
-At the CernVM Users Workshop in 2022, Chris Burr (LHCb) highlighted a
-practical limitation: in interactive sessions, CernVM-FS can be roughly
-three to five times slower than local disk, even with a hot cache. For
-distributed batch computing this is not a real concern, but in
-interactive work startup latency matters: if opening an analysis
-environment takes too long, the user experience suffers.
+At the CernVM Users Workshop in 2022, Chris Burr (LHCb) reported that
+interactive CernVM-FS use can be roughly three to five times slower
+than local disk, even with a hot cache~\cite{ref-burr}. This overhead is
+usually acceptable for distributed batch workloads, but is noticeable
+when starting an interactive analysis environment.
 
 The effect is easy to reproduce on a controlled testbed. Installing
 ROOT from a release tarball on local disk, importing ROOT in Python
@@ -143,11 +138,11 @@ timing of the first wave of requests, not the data model.}
 \section{Filebundles}
 \label{sec-design}
 
-The central idea of filebundles is to exploit information we already
-have about startup behaviour. For applications like ROOT or Python, the
-set of files needed immediately after opening a given \emph{trigger}
-file is often fairly predictable. Instead of discovering those
-dependencies one file at a time, we describe them in advance.
+Filebundles use prior knowledge of application startup. For applications
+such as ROOT~\cite{ref-root} or Python, the files needed immediately
+after a given \emph{trigger} file is opened are often predictable. A
+bundle records these dependencies instead of leaving the client to
+discover them one file at a time.
 
 A bundle is declared by a specification file published next to its
 trigger file in the same directory, named
@@ -182,12 +177,11 @@ dependent requests is replaced by a much shorter parallel prefetch
 phase that warms the local cache ahead of the application's subsequent
 \texttt{open()} calls.
 
-The feature is disabled by default and is enabled per mount through the
-client configuration option \texttt{CVMFS\_PREFETCH\_FILEBUNDLES=yes}.
-The decision whether bundle prefetching is active is taken once at
-mount time, so clients that leave the option disabled incur no
-additional overhead. The size of the prefetch thread pool is controlled
-through \texttt{CVMFS\_BUNDLE\_POOL\_SIZE}.
+The feature is disabled by default and can be enabled per mount with
+\texttt{CVMFS\_PREFETCH\_FILEBUNDLES=yes}~\cite{ref-docs}. The setting
+is read at mount time; mounts for which it is disabled do not start
+bundle prefetching. The prefetch-pool size is controlled by
+\texttt{CVMFS\_BUNDLE\_POOL\_SIZE}.
 
 \subsection{Publishing a filebundle}
 \label{sec-publish}
@@ -207,23 +201,22 @@ bundle, after which the trigger behaves like an ordinary file.
 \section{Results}
 \label{sec-results}
 
-Unless noted otherwise, the benchmarks below use ROOT~6.36.12 deployed
-in a test CernVM-FS repository served from \texttt{localhost}, on an AMD
-EPYC~7302 system (2$\times$16 cores, 64 threads at ${\sim}3.0$~GHz,
-251~GB RAM) running AlmaLinux~10.1 with kernel~6.12. Serving from
-localhost isolates the per-file software overhead from external network
-effects.
+Unless noted otherwise, the benchmarks use ROOT~6.36.12 in a test
+CernVM-FS repository served from \texttt{localhost}. The client ran on
+an AMD EPYC~7302 system (2$\times$16 cores, 64 threads at
+${\sim}3.0$~GHz, 251~GB RAM), with AlmaLinux~10.1 and kernel~6.12.
+Using \texttt{localhost} removes external network effects, exposing the
+per-file software overhead.
 
 \subsection{Startup performance}
 \label{sec-startup}
 
-Figure~\ref{fig-violin} compares the distribution of ROOT startup
-times for local disk, CernVM-FS on a cold cache without filebundles,
-and CernVM-FS with filebundles enabled. The key result is that
-filebundles match local-disk startup performance. In some
-configurations they are even marginally faster, because the concurrent
-prefetch overlaps download and decompression work more effectively than
-the purely on-demand path.
+Figure~\ref{fig-violin} compares ROOT startup times on local disk, on
+CernVM-FS with a cold cache and no filebundles, and on CernVM-FS with
+filebundles enabled. In this benchmark, filebundles bring CernVM-FS
+startup time to the local-disk range. Some measurements are marginally
+faster than local disk, consistent with overlap between downloading and
+decompression in the prefetch path.
 
 \begin{figure}[t]
 \centering
@@ -257,15 +250,13 @@ eight worker threads, the default.}
 \subsection{Network latency}
 \label{sec-latency}
 
-The benefit is most pronounced under network latency. We artificially
-injected loopback round-trip latency using \texttt{tc qdisc netem}.
-Without filebundles, startup time grows roughly linearly with the
-round-trip time, because the application must wait for many small
-dependent fetches in sequence. With filebundles enabled, startup time
-stays nearly flat over a substantial range (Fig.~\ref{fig-latency}),
-because the requests are prefetched concurrently: in this idealized
-case the round-trip penalty is paid only for a small number of batches
-rather than once per file.
+We injected loopback round-trip latency with \texttt{tc qdisc netem}.
+Without filebundles, startup time grows approximately linearly with
+round-trip time because the application waits for many dependent,
+small-file fetches. With filebundles, startup time remains nearly flat
+over a substantial range (Fig.~\ref{fig-latency}): concurrent prefetch
+pays the round-trip penalty for a small number of batches rather than
+for each file. This is an idealized loopback experiment.
 
 \begin{figure}[t]
 \centering
@@ -302,32 +293,28 @@ req/s versus ${\sim}680$ req/s without bundles).}
 \section{Outlook}
 \label{sec-outlook}
 
-Several directions for future work remain. FUSE passthrough, available
-in CernVM-FS 2.14 on newer kernels, allows direct kernel I/O on cached
-objects after \texttt{open()} and should reduce overhead further;
-proper benchmarks combining it with filebundles are still needed. For
-CernVM-FS 2.15 we plan better tooling for filebundle creation, with
-more automation, more robust updates, and support for specifying file
-chunks in bundle specifications. Finally, we are considering packfiles
-that aggregate many small objects in backend storage to reduce request
-overhead at the source; the main challenge there is backward
-compatibility.
+FUSE passthrough in CernVM-FS~2.14 on recent kernels can hand the
+kernel a descriptor for the cached backing file at \texttt{open()}, so
+subsequent reads bypass FUSE. Its interaction with filebundles still
+needs to be benchmarked. Planned work for CernVM-FS~2.15 includes tools
+for creating and updating bundles, support for file chunks in bundle
+specifications, and integration with build tools. Packfiles, which
+would combine small backend objects to reduce request counts, are also
+under consideration; backward compatibility is the principal obstacle.
 
 %======================================================================
 \section{Conclusions}
 \label{sec-conclusions}
 
-CernVM-FS filebundles are an effective way to accelerate application
-startup when many files are needed immediately. They require some
-effort from the librarian -- tracing startup behaviour and publishing a
-\texttt{.cvmfsbundle} specification next to a trigger file -- but in
-return they can dramatically reduce cold-start latency, match local-disk
-startup performance, and remain robust as network latency grows where
-the on-demand baseline degrades linearly. The feature is available in
-CernVM-FS 2.14 and is enabled per mount with
-\texttt{CVMFS\_PREFETCH\_FILEBUNDLES}. Used selectively on interactive
-systems, it closes much of the gap between a globally distributed,
-on-demand file system and local disk.
+Filebundles reduce application-startup latency when a known set of files
+is needed immediately after a trigger is opened. They require the
+repository maintainer to trace startup behaviour and publish a
+\texttt{.cvmfsbundle} specification next to the trigger. In the ROOT
+benchmark, they reduce cold-start time to the local-disk range and make
+startup less sensitive to added round-trip latency. Filebundles are an
+opt-in CernVM-FS~2.14 feature, enabled per mount with
+\texttt{CVMFS\_PREFETCH\_FILEBUNDLES}. They are best suited to
+interactive systems, where the prefetch burst can be managed.
 
 \vspace{0.5em}
 \noindent\textbf{Acknowledgements.} We thank Chris Burr (LHCb) for the
@@ -342,21 +329,22 @@ verified by the authors.}
 \begin{thebibliography}{9}
 
 \bibitem{ref-cvmfs}
-J. Blomer, P. Buncic, R. Meusel, G. Ganis, I. Sfiligoi, D. Thain,
-The need for a versioned data analysis software environment,
-in \textit{Proc.\ of the 9th IEEE International Conference on
-e-Science} (2013).
-\url{https://doi.org/10.1109/eScience.2013.44}
-
-\bibitem{ref-cvmfs-tech}
 J. Blomer, C. Aguado-S\'anchez, P. Buncic, A. Harutyunyan,
 Distributing LHC application software and conditions databases using
 the CernVM file system, J.\ Phys.: Conf.\ Ser.\ \textbf{331}, 042003
 (2011). \url{https://doi.org/10.1088/1742-6596/331/4/042003}
 
+\bibitem{ref-burr}
+C. Burr, \textit{Client performance}, CernVM Users Workshop (2022).
+\url{https://indico.cern.ch/event/1079490/contributions/4939521/attachments/2506388/4306645/2022-09-12_CVMFS-Workshop_LHCb.pdf}
+
+\bibitem{ref-root}
+R. Brun, F. Rademakers, ROOT---an object oriented data analysis
+framework, Nucl.\ Instrum.\ Methods Phys.\ Res.\ A \textbf{389},
+81--86 (1997). \url{https://doi.org/10.1016/S0168-9002(97)00048-X}
+
 \bibitem{ref-docs}
-CernVM-FS documentation.
-\url{https://cvmfs.readthedocs.io/}
+CernVM-FS documentation. \url{https://cvmfs.readthedocs.io/}
 
 \end{thebibliography}
 
