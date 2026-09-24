@@ -13,6 +13,10 @@
 \newcommand{\cvmfs}{CernVM-FS}
 \newcommand{\fuse}{FUSE}
 \newcommand{\wlcg}{WLCG}
+\newcommand{\filebundle}{\emph{filebundle}}
+\newcommand{\Filebundle}{\emph{Filebundle}}
+\newcommand{\filebundles}{\emph{filebundles}}
+\newcommand{\Filebundles}{\emph{Filebundles}}
 % Compact listing style for the JSON bundle example
 \lstdefinestyle{bundle}{
   basicstyle=\ttfamily\footnotesize,
@@ -26,7 +30,7 @@
 
 \begin{document}
 
-\title{CernVM-FS Filebundles for low-latency software distribution
+\title{CernVM-FS \Filebundles\ for low-latency software distribution
 in interactive use cases}
 
 \author{%
@@ -42,18 +46,18 @@ in interactive use cases}
 scientific software to the Worldwide LHC Computing Grid and many
 communities beyond high-energy physics. Its lazy, per-file fetching is
 highly efficient for batch computing, but it adds noticeable latency to
-interactive sessions: starting an application that opens hundreds of
-small files on a cold cache serializes one network round trip after
-another. We present \emph{filebundles}, a mechanism that exploits the
+interactive sessions: starting an application that requires access to hundreds of
+small files on a cold cache is triggering a chain of serial downloading operations to the network.
+We present \filebundle\ prefetching, a mechanism that exploits the
 predictable file-access pattern at application startup. A small bundle
-specification, published next to a trigger file, declares the set of
+specification called \filebundle, published next to a trigger file, declares the set of
 files needed immediately after the trigger is opened. When a client
 opens the trigger, \cvmfs\ prefetches the listed dependencies
 concurrently using a pool of worker threads, replacing a long serial
 chain of requests with a short parallel prefetch phase. On a ROOT
-startup benchmark, filebundles bring performance into the local-disk
+startup benchmark, \filebundles\ bring performance into the local-disk
 range and keep startup time nearly flat as network latency grows, while
-the on-demand baseline degrades approximately linearly. Filebundles are
+the on-demand baseline degrades approximately linearly. \Filebundles\ are
 an opt-in feature in \cvmfs\ 2.14.
 }
 
@@ -69,7 +73,7 @@ It is a core component of the Worldwide LHC Computing Grid ( \wlcg\ ) and
 is also used by communities beyond high-energy physics, including
 Euclid, LIGO, LSST, SKA, and EESSI.
 
-\cvmfs\ uses a distributed architecture (Fig.~\ref{fig-hierarchy}), where software is originally published in Stratum0 - a server which is considered the source of truth, in the form of repositories.
+\cvmfs\ uses a distributed architecture (Fig.~\ref{fig-hierarchy}), where software is originally published in a Stratum0 servere - is considered the source of truth, in the form of repositories.
 The contents of Stratum0 are then cloned in a series of geographically scattered mirror servers (Stratum1's), arranged to facilitate the different user sites, in order to mitigate the traffic of Stratum0.
 Users can access the contents of a repository either directly from a Stratum (0 or 1) (not encouraged) or via a series of forward proxies that site administrators configure, for better load balancing and caching.
 \wlcg\ has about fifteen Stratum~1 mirror servers in Europe, the Americas, and Asia, managing about $3.3\times10^{10}$ files
@@ -77,8 +81,8 @@ and 2~PB of data and more than 8000 container images.
 
 Data (repository contents) on \cvmfs\ are stored in a content addressable format.
 During publication files are chunked, hashed and compressed.
-A filename is associated to its hash (or hashes in the case of chunking) through dedicated dictionaries called catalogs.
-Catalogs can also be nested in order to sustain the rapid repository growth.
+A filename is associated to its hash (or hashes in the case of chunking) through dedicated metadata dictionaries called catalogs.
+Catalogs can also be nested in order to keep catalog operations manageable for large repositories.
 
 From the users perspective, repositories can be accessed via a global namespace, by default under  \texttt{/cvmfs} in their machine.
 This is done by the \cvmfs\ client, which is a \fuse\ based filesystem.
@@ -98,7 +102,7 @@ distributed batch computing, where the benefits of a shared software
 distribution system dominate any per-file overhead. In interactive
 sessions, however, the same on-demand behaviour can make application
 startup noticeably slower than from local disk. This paper presents
-\emph{filebundles}, a mechanism that reduces that startup latency by
+\emph{\filebundles}, a mechanism that reduces that startup latency by
 prefetching the files an application needs immediately after launch.
 
 \begin{figure}[t]
@@ -106,8 +110,7 @@ prefetching the files an application needs immediately after launch.
 \includegraphics[width=0.78\textwidth]{figures/cvmfs_hierarchy.png}
 \caption{The \cvmfs\ cache hierarchy: a writable Stratum~0 origin,
 globally distributed Stratum~1 mirrors, site-level Squid proxies, and
-per-client disk and kernel page caches. Filebundles change only the
-timing of the first wave of requests, not the data model.}
+  per-client disk and kernel page caches. The \filebundle\ mechanism operate on the same hierarchy, only changing proxy's workload, creating short bursts of download requests on the first access of a trigger file.}
 \label{fig-hierarchy}
 \end{figure}
 \clearpage % Keep the Section 2 hierarchy figure out of the bundle listing.
@@ -121,7 +124,7 @@ Its architecture portends some weak points that have thoroughly been investigate
 The first and major one is the overhead added by the network. 
 This series of mirror and proxy servers are aiming to improve data locality, opting to minimize its non negligible impact.
 The second factor is the overhead added by \fuse\, which is a performance penalty that can not be avoided.
-\fuse\ allows the filesystem to be designed in user space, which is a strong requirement by the community (since an interference with the kernel is not considered a viable option).
+\fuse\ allows the filesystem to be designed in user space, which is a strong requirement by the community (since a kernel module approach is not considered a viable option).
 
 At the CernVM Users Workshop in 2022, Chris Burr (LHCb) reported that
 interactive \cvmfs\ use can be roughly three to five times slower
@@ -137,7 +140,7 @@ the network path is very short, so the slowdown is not primarily a
 bandwidth problem. It confirms that a significant part of the delay
 comes from the way \cvmfs\ serves many files on demand.
 
-\subsection{Where does the time go?}
+\subsection{Cold cache performance analysis}
 \label{sec-time}
 
 When an application such as ROOT starts, it opens many dependent files one after
@@ -148,19 +151,20 @@ This per-file overhead is paid for every dependent file, and is
 effectively serialized among the dependencies. 
 The per-file amount of work is unremarkable, but the latency across the multiple serialized requests adds up, and becomes noticeable in interactive use.
 
-The idea behind filebundles is that we cant take advantage of the fact that the dependencies of an application are or can be known at the time of the publication of the repository, and all dependencies can be fetched simultaneously after the main (trigger) file is opened.
-Filebundles operate within the existing hierarchy of \cvmfs\ (Fig.~\ref{fig-hierarchy}). They do not change the data
-model; they only change \emph{when} and \emph{how} the first wave of file requests is fetched to the local cache.
+The idea behind \emph{ \filebundles\ } is that we can take advantage of the fact that the dependencies of an application are or can be known at the time of the publication of the repository, and all dependencies can be fetched simultaneously after the main (trigger) file is opened.
+The \filebundle\ mechanism operates within the existing hierarchy of \cvmfs\ (Fig.~\ref{fig-hierarchy}).
+There are a couple additional points of complexity that come with the feature conceptually.
+From the software maintainers standpoint, there is the responsibility to provide an up to date dependency list during publishing new versions of their software.
+For the site infrastructure administrators, there is some change in the proxy access patterns to be anticipated (since on a cold cache, massive parallel download requests will be triggered from the client).
 
 %======================================================================
 \section{Filebundles}
 \label{sec-design}
 
-Filebundles use prior knowledge of application startup. For applications
+\Filebundles\ use prior knowledge of the application's source file dependencies during startup. For applications
 such as ROOT~\cite{ref-root} or Python, the files needed immediately
 after a given \emph{trigger} file is opened are often predictable. A
-bundle records these dependencies instead of leaving the client to
-discover them one file at a time.
+bundle records these dependencies allowing the client to fetch them eagerly in parallel in advance.
 
 A bundle is declared by a specification file published next to its
 trigger file in the same directory, named
@@ -193,9 +197,9 @@ dependencies concurrently, using a pool of worker threads, while the
 application continues to run. In effect, a long serial chain of
 dependent requests is replaced by a much shorter parallel prefetch
 phase that warms the local cache ahead of the application's subsequent
-\texttt{open()} calls.
+\emph{open()} calls.
 
-The feature is disabled by default and can be enabled per mount with
+The feature is disabled by default and can be enabled per mount with the configuration parameter
 \texttt{CVMFS\_PREFETCH\_FILEBUNDLES=yes}~\cite{ref-docs}. The setting
 is read at mount time; mounts for which it is disabled do not start
 bundle prefetching. The prefetch-pool size is controlled by
@@ -204,7 +208,7 @@ bundle prefetching. The prefetch-pool size is controlled by
 \subsection{Publishing a filebundle}
 \label{sec-publish}
 
-From the librarian's point of view the workflow is straightforward.
+In order to create \emph{.cvmfsbundle-<filename>}, there is a straightforward series of steps.
 First, choose a suitable trigger file, for example a Python
 \texttt{\_\_init\_\_.py} or a launcher binary such as
 \texttt{root.exe}. Second, determine which files are typically read
@@ -230,8 +234,8 @@ per-file software overhead.
 \label{sec-startup}
 
 Figure~\ref{fig-violin} compares ROOT startup times on local disk, on
-\cvmfs\ with a cold cache and no filebundles, and on \cvmfs\ with
-filebundles enabled. In this benchmark, filebundles bring \cvmfs
+\cvmfs\ with a cold cache and no \filebundles, and on \cvmfs\ with
+\filebundles\ enabled. In this benchmark, \filebundles\ bring \cvmfs\
 startup time to the local-disk range. Some measurements are marginally
 faster than local disk, consistent with overlap between downloading and
 decompression in the prefetch path.
@@ -239,7 +243,7 @@ decompression in the prefetch path.
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.62\textwidth]{figures/violin_bundle.pdf}
-\caption{Distribution of ROOT startup times. With filebundles enabled
+\caption{Distribution of ROOT startup times. With \filebundles\ enabled
 (\texttt{CVMFS\_PREFETCH\_FILEBUNDLES=ON}), \cvmfs\ startup matches
 local-disk performance, closing the gap to the on-demand cold-cache
 baseline.}
@@ -269,9 +273,9 @@ eight worker threads, the default.}
 \label{sec-latency}
 
 We injected loopback round-trip latency with \texttt{tc qdisc netem}.
-Without filebundles, startup time grows approximately linearly with
+Without \filebundles, startup time grows approximately linearly with
 round-trip time because the application waits for many dependent,
-small-file fetches. With filebundles, startup time remains nearly flat
+small-file fetches. With \filebundles, startup time remains nearly flat
 over a substantial range (Fig.~\ref{fig-latency}): concurrent prefetch
 pays the round-trip penalty for a small number of batches rather than
 for each file. This is an idealized loopback experiment.
@@ -281,27 +285,27 @@ for each file. This is an idealized loopback experiment.
 \includegraphics[width=0.62\textwidth]{figures/latency_scan.pdf}
 \caption{ROOT startup time as a function of injected round-trip
 latency. The on-demand baseline degrades roughly linearly, while
-filebundles keep startup nearly flat by overlapping requests.}
+\filebundles\ keep startup nearly flat by overlapping requests.}
 \label{fig-latency}
 \end{figure}
 
 \subsection{Caveats}
 \label{sec-caveats}
 
-Filebundles do not reduce the total amount of data transferred; they
+\Filebundles\ do not reduce the total amount of data transferred; they
 compress the startup traffic into a short, intense burst. In the
-benchmark, requests peak at about 1480~per~second with filebundles,
+benchmark, requests peak at about 1480~per~second with \filebundles,
 versus about 680~per~second without them (Fig.~\ref{fig-burst}). The
-feature should therefore be used selectively, in particular on
+feature should therefore be used selectively, targeting
 interactive systems such as \texttt{lxplus}, where startup latency
 matters most. Over-prefetching should be avoided, and any rollout
 should be coordinated with proxy and site administrators so that the
-request bursts do not overload shared caches.
+request bursts do not overload the sites' proxies.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.62\textwidth]{figures/req_burst.pdf}
-\caption{Request rate during startup. Filebundles concentrate the same
+\caption{Request rate during startup. \Filebundles\ concentrate the same
 total traffic into a shorter, more intense burst (peak ${\sim}1480$
 req/s versus ${\sim}680$ req/s without bundles).}
 \label{fig-burst}
@@ -313,7 +317,7 @@ req/s versus ${\sim}680$ req/s without bundles).}
 
 FUSE passthrough in \cvmfs~2.14 on recent kernels can hand the
 kernel a descriptor for the cached backing file at \texttt{open()}, so
-subsequent reads bypass FUSE. Its interaction with filebundles still
+subsequent reads bypass FUSE. This eliminates the overhead imposed by \fuse\ for unchunked files. Its potential to improve the startup time of application combined with \filebundles\ still
 needs to be benchmarked. Planned work for \cvmfs~2.15 includes tools
 for creating and updating bundles, support for file chunks in bundle
 specifications, and integration with build tools. Packfiles, which
@@ -324,19 +328,19 @@ under consideration; backward compatibility is the principal obstacle.
 \section{Conclusions}
 \label{sec-conclusions}
 
-Filebundles reduce application-startup latency when a known set of files
+\Filebundles\ reduce application-startup latency when a known set of files
 is needed immediately after a trigger is opened. They require the
 repository maintainer to trace startup behaviour and publish a
 \texttt{.cvmfsbundle} specification next to the trigger. In the ROOT
 benchmark, they reduce cold-start time to the local-disk range and make
-startup less sensitive to added round-trip latency. Filebundles are an
+startup less sensitive to added round-trip latency. \Filebundles\ are an
 opt-in \cvmfs~2.14 feature, enabled per mount with
 \texttt{CVMFS\_PREFETCH\_FILEBUNDLES}. They are best suited to
 interactive systems, where the prefetch burst can be managed.
 
 \vspace{0.5em}
 \noindent\textbf{Acknowledgements.} We thank Chris Burr (LHCb) for the
-input that motivated this work, and the \cvmfs\ team at CERN.
+valuable input that provided a measurable reference for the potential of improving applications' startup on interactive workloads.
 
 \vspace{0.3em}
 \noindent\emph{Disclosure: AI-based tools were used to assist with
