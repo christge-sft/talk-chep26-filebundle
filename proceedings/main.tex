@@ -255,10 +255,12 @@ baseline.}
 \subsection{Prefetch thread pool}
 \label{sec-pool}
 
-Prefetching is implemented with a pool of worker threads whose size is
+An efficient prefetching mechanism should ensure that the files inside the bundle are fetched as rapidly as possible to be available on potential access.
+During our primitive experiments, we realized that a single-threaded fetching mechanism inside the client is getting saturated and the network is being underutilized ( every download is followed by a decompression from the same worker thread ).
+To overcome this bottleneck, we implemented prefetching with a pool of worker threads whose size is
 set by \emph{CVMFS\_BUNDLE\_POOL\_SIZE}. As shown in
 Fig.~\ref{fig-pool}, startup performance improves as workers are added
-but saturates around eight threads, which is also the default. Most of
+and saturates around eight threads, which is also the default. Most of
 the benefit is therefore obtained with a moderate amount of concurrency
 and without aggressive tuning.
 
@@ -274,10 +276,11 @@ eight worker threads, the default.}
 \subsection{Network latency}
 \label{sec-latency}
 
-We injected loopback round-trip latency with \emph{tc qdisc netem}.
+For the experiments of section ~\ref{sec-pool} shown in Fig.~\ref{fig-pool}, the repository was served from localhost, which minimizes the effect of network latencies that appear on more realistic scenarios.
+To comprehend the impact of network latency to the performance of \filebundles, we injected loopback round-trip latency with \emph{tc qdisc netem}.
 Without \filebundles, startup time grows approximately linearly with
-round-trip time because the application waits for many dependent,
-small-file fetches. With \filebundles, startup time remains nearly flat
+round-trip time because the latency of the sequential dependent small-file fetches grows cumulatively.
+With \filebundles, startup time remains nearly flat
 over a substantial range (Fig.~\ref{fig-latency}): concurrent prefetch
 pays the round-trip penalty for a small number of batches rather than
 for each file. This is an idealized loopback experiment.
