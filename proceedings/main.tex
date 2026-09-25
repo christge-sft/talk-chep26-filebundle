@@ -84,7 +84,7 @@ During publication files are chunked, hashed and compressed.
 A filename is associated to its hash (or hashes in the case of chunking) through dedicated metadata dictionaries called catalogs.
 Catalogs can also be nested in order to keep catalog operations manageable for large repositories.
 
-From the users perspective, repositories can be accessed via a global namespace, by default under  \texttt{/cvmfs} in their machine.
+From the users perspective, repositories can be accessed via a global namespace, by default under  \emph{/cvmfs} in their machine.
 This is done by the \cvmfs\ client, which is a \fuse\ based filesystem.
 Typically, there is some disk allocated space in the user's machine that works as a local cache.
 \cvmfs\ is performing cache cleanup using an LRU policy.
@@ -134,7 +134,7 @@ when starting an interactive analysis environment.
 
 The behavior is easy to reproduce on a controlled testbed. Installing
 ROOT from a release tarball on local disk, importing ROOT in Python
-takes about 2.47~s. Using the same software stack from \texttt{/cvmfs}
+takes about 2.47~s. Using the same software stack from \emph{/cvmfs}
 with a cold cache, the time increases to about 4.69~s. In this setup
 the network path is very short, so the slowdown is not primarily a
 bandwidth problem. It confirms that a significant part of the delay
@@ -168,11 +168,11 @@ bundle records these dependencies allowing the client to fetch them eagerly in p
 
 A bundle is declared by a specification file published next to its
 trigger file in the same directory, named
-\texttt{.cvmfsbundle-<filename>}, where \texttt{<filename>} is the
+\emph{.cvmfsbundle-<filename>}, where \emph{<filename>} is the
 trigger. The specification is a small, versioned JSON document holding
 minimal metadata and a flat list of dependency paths, expressed as
 absolute paths from the repository root. A representative ROOT bundle,
-keyed on the Python package \texttt{\_\_init\_\_.py}, contains roughly
+keyed on the Python package \emph{\_\_init\_\_.py}, contains roughly
 250 paths:
 
 \begin{lstlisting}[style=bundle]
@@ -192,7 +192,7 @@ keyed on the Python package \texttt{\_\_init\_\_.py}, contains roughly
 \end{lstlisting}
 
 When a client opens the trigger file, \cvmfs\ detects the matching
-\texttt{.cvmfsbundle} specification and begins prefetching the listed
+\emph{.cvmfsbundle} specification and begins prefetching the listed
 dependencies concurrently, using a pool of worker threads, while the
 application continues to run. In effect, a long serial chain of
 dependent requests is replaced by a much shorter parallel prefetch
@@ -200,21 +200,21 @@ phase that warms the local cache ahead of the application's subsequent
 \emph{open()} calls.
 
 The feature is disabled by default and can be enabled per mount with the configuration parameter
-\texttt{CVMFS\_PREFETCH\_FILEBUNDLES=yes}~\cite{ref-docs}. The setting
+\emph{CVMFS\_PREFETCH\_FILEBUNDLES=yes}~\cite{ref-docs}. The setting
 is read at mount time; mounts for which it is disabled do not start
 bundle prefetching. The prefetch-pool size is controlled by
-\texttt{CVMFS\_BUNDLE\_POOL\_SIZE}.
+\emph{CVMFS\_BUNDLE\_POOL\_SIZE}.
 
 \subsection{Publishing a filebundle}
 \label{sec-publish}
 
 In order to create \emph{.cvmfsbundle-<filename>}, there is a straightforward series of steps.
 First, choose a suitable trigger file, for example a Python
-\texttt{\_\_init\_\_.py} or a launcher binary such as
-\texttt{root.exe}. Second, determine which files are typically read
+\emph{\_\_init\_\_.py} or a launcher binary such as
+\emph{root.exe}. Second, determine which files are typically read
 after that trigger; this can be done by hand or with tracing tools such
-as \texttt{strace} or the built-in \texttt{CVMFS\_TRACEFILE}
-mechanism. Third, publish the resulting \texttt{.cvmfsbundle-<filename>}
+as \emph{strace} or the built-in \emph{CVMFS\_TRACEFILE}
+mechanism. Third, publish the resulting \emph{.cvmfsbundle-<filename>}
 specification next to the trigger file, just like any other file in the
 repository. Removing the specification (and republishing) removes the
 bundle, after which the trigger behaves like an ordinary file.
@@ -224,10 +224,10 @@ bundle, after which the trigger behaves like an ordinary file.
 \label{sec-results}
 
 Unless noted otherwise, the benchmarks use ROOT~6.36.12 in a test
-\cvmfs\ repository served from \texttt{localhost}. The client ran on
+\cvmfs\ repository served from \emph{localhost}. The client ran on
 an AMD EPYC~7302 system (2$\times$16 cores, 64 threads at
 ${\sim}3.0$~GHz, 251~GB RAM), with AlmaLinux~10.1 and kernel~6.12.
-Using \texttt{localhost} removes external network effects, exposing the
+Using \emph{localhost} removes external network effects, exposing the
 per-file software overhead.
 
 \subsection{Startup performance}
@@ -244,7 +244,7 @@ decompression in the prefetch path.
 \centering
 \includegraphics[width=0.62\textwidth]{figures/violin_bundle.pdf}
 \caption{Distribution of ROOT startup times. With \filebundles\ enabled
-(\texttt{CVMFS\_PREFETCH\_FILEBUNDLES=ON}), \cvmfs\ startup matches
+(\emph{CVMFS\_PREFETCH\_FILEBUNDLES=ON}), \cvmfs\ startup matches
 local-disk performance, closing the gap to the on-demand cold-cache
 baseline.}
 \label{fig-violin}
@@ -254,7 +254,7 @@ baseline.}
 \label{sec-pool}
 
 Prefetching is implemented with a pool of worker threads whose size is
-set by \texttt{CVMFS\_BUNDLE\_POOL\_SIZE}. As shown in
+set by \emph{CVMFS\_BUNDLE\_POOL\_SIZE}. As shown in
 Fig.~\ref{fig-pool}, startup performance improves as workers are added
 but saturates around eight threads, which is also the default. Most of
 the benefit is therefore obtained with a moderate amount of concurrency
@@ -264,7 +264,7 @@ and without aggressive tuning.
 \centering
 \includegraphics[width=0.62\textwidth]{figures/pool_scan.pdf}
 \caption{ROOT startup time as a function of the prefetch thread-pool
-size (\texttt{CVMFS\_BUNDLE\_POOL\_SIZE}). Performance saturates around
+size (\emph{CVMFS\_BUNDLE\_POOL\_SIZE}). Performance saturates around
 eight worker threads, the default.}
 \label{fig-pool}
 \end{figure}
@@ -272,7 +272,7 @@ eight worker threads, the default.}
 \subsection{Network latency}
 \label{sec-latency}
 
-We injected loopback round-trip latency with \texttt{tc qdisc netem}.
+We injected loopback round-trip latency with \emph{tc qdisc netem}.
 Without \filebundles, startup time grows approximately linearly with
 round-trip time because the application waits for many dependent,
 small-file fetches. With \filebundles, startup time remains nearly flat
@@ -297,7 +297,7 @@ compress the startup traffic into a short, intense burst. In the
 benchmark, requests peak at about 1480~per~second with \filebundles,
 versus about 680~per~second without them (Fig.~\ref{fig-burst}). The
 feature should therefore be used selectively, targeting
-interactive systems such as \texttt{lxplus}, where startup latency
+interactive systems such as \emph{lxplus}, where startup latency
 matters most. Over-prefetching should be avoided, and any rollout
 should be coordinated with proxy and site administrators so that the
 request bursts do not overload the sites' proxies.
@@ -316,7 +316,7 @@ req/s versus ${\sim}680$ req/s without bundles).}
 \label{sec-outlook}
 
 FUSE passthrough in \cvmfs~2.14 on recent kernels can hand the
-kernel a descriptor for the cached backing file at \texttt{open()}, so
+kernel a descriptor for the cached backing file at \emph{open()}, so
 subsequent reads bypass FUSE. This eliminates the overhead imposed by \fuse\ for unchunked files. Its potential to improve the startup time of application combined with \filebundles\ still
 needs to be benchmarked. Planned work for \cvmfs~2.15 includes tools
 for creating and updating bundles, support for file chunks in bundle
@@ -331,11 +331,11 @@ under consideration; backward compatibility is the principal obstacle.
 \Filebundles\ reduce application-startup latency when a known set of files
 is needed immediately after a trigger is opened. They require the
 repository maintainer to trace startup behaviour and publish a
-\texttt{.cvmfsbundle} specification next to the trigger. In the ROOT
+\emph{.cvmfsbundle} specification next to the trigger. In the ROOT
 benchmark, they reduce cold-start time to the local-disk range and make
 startup less sensitive to added round-trip latency. \Filebundles\ are an
 opt-in \cvmfs~2.14 feature, enabled per mount with
-\texttt{CVMFS\_PREFETCH\_FILEBUNDLES}. They are best suited to
+\emph{CVMFS\_PREFETCH\_FILEBUNDLES}. They are best suited to
 interactive systems, where the prefetch burst can be managed.
 
 \vspace{0.5em}
