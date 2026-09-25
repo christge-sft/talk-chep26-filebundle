@@ -162,9 +162,9 @@ For the site infrastructure administrators, there is some change in the proxy ac
 \label{sec-design}
 
 \Filebundles\ use prior knowledge of the application's source file dependencies during startup. For applications
-such as ROOT~\cite{ref-root} or Python, the files needed immediately
-after a given \emph{trigger} file is opened are often predictable. A
-bundle records these dependencies allowing the client to fetch them eagerly in parallel in advance.
+such as ROOT~\cite{ref-root} or Python, there is a main file (\emph{ trigger }) whose access is signaling the application's startup.
+The series of files that are accessed immediately after the trigger file is opened are often predictable.
+A bundle records these dependencies allowing the client to fetch them eagerly in parallel before they are needed from the application.
 
 A bundle is declared by a specification file published next to its
 trigger file in the same directory, named
@@ -191,15 +191,17 @@ keyed on the Python package \emph{\_\_init\_\_.py}, contains roughly
 }
 \end{lstlisting}
 
-When a client opens the trigger file, \cvmfs\ detects the matching
+When a client receives an \emph{open()} on the trigger file, \cvmfs\ detects the matching
 \emph{.cvmfsbundle} specification and begins prefetching the listed
 dependencies concurrently, using a pool of worker threads, while the
-application continues to run. In effect, a long serial chain of
+application continues to run. 
+Once fetched, the files (which from the clients point of view is a series of compressed hashes) are getting decompressed (also in parallel) and stored in the local disk.
+In effect, a long serial chain of
 dependent requests is replaced by a much shorter parallel prefetch
 phase that warms the local cache ahead of the application's subsequent
 \emph{open()} calls.
 
-The feature is disabled by default and can be enabled per mount with the configuration parameter
+The feature is disabled by default and can be enabled per mountpoint with the configuration parameter
 \emph{CVMFS\_PREFETCH\_FILEBUNDLES=yes}~\cite{ref-docs}. The setting
 is read at mount time; mounts for which it is disabled do not start
 bundle prefetching. The prefetch-pool size is controlled by
